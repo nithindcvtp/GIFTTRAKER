@@ -23,18 +23,93 @@ let D = { people: [], gifts: [], occasions: [] };
 let key = (window.CONFIG && window.CONFIG.PASSCODE) || localStorage.getItem('kk_key') || '';
 let flash = '';
 
-// ---------------------------------------------------------------- API
+// ---------------------------------------------------------------- API + local-first sync
+// Every change is applied to the page instantly (applyLocal), then sent to Google Sheets in the background (queue).
+const uid = () => String(crypto.randomUUID ? crypto.randomUUID() : Date.now() + Math.random().toString(16).slice(2)).replace(/-/g, '');
+let queue = JSON.parse(localStorage.getItem('kk_queue') || '[]'), syncing = false, syncErr = '';
+const saveQ = () => localStorage.setItem('kk_queue', JSON.stringify(queue));
+
 async function call(action, payload = {}) {
-  const r = await fetch(window.CONFIG.API_URL, {
-    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // text/plain avoids a CORS preflight
-    body: JSON.stringify({ key, action, ...payload })
-  });
-  const j = await r.json();
+  let j;
+  try {
+    const r = await fetch(window.CONFIG.API_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // text/plain avoids a CORS preflight
+      body: JSON.stringify({ key, action, ...payload })
+    });
+    j = await r.json();
+  } catch (e) { const err = new Error('Offline'); err.net = true; throw err; }
   if (!j.ok) { if (/passcode/i.test(j.error)) { key = ''; localStorage.removeItem('kk_key'); } throw new Error(j.error); }
-  D = j.data;
+  return j.data;
 }
-async function act(fn, okMsg) {
-  try { await fn(); flash = okMsg || ''; route(); } catch (e) { alert(e.message); }
+
+function badge(text, hideAfter) {
+  let b = $('#sync');
+  if (!b) {
+    b = document.createElement('div'); b.id = 'sync';
+    b.style.cssText = 'position:fixed;right:14px;bottom:14px;padding:6px 14px;border-radius:20px;font-size:.82rem;background:#fff;border:1px solid #ddd;box-shadow:0 2px 8px rgba(0,0,0,.15);z-index:50;display:none';
+    document.body.appendChild(b);
+  }
+  clearTimeout(b._t); b.textContent = text || ''; b.style.display = text ? 'block' : 'none';
+  if (text && hideAfter) b._t = setTimeout(() => (b.style.display = 'none'), hideAfter);
+}
+
+async function pump() {
+  if (syncing || !queue.length) return;
+  syncing = true; badge('Saving…');
+  while (queue.length) {
+    try {
+      const data = await call(queue[0].action, queue[0].payload);
+      queue.shift(); saveQ(); syncErr = '';
+      if (!queue.length) D = data;                 // quiet re-sync with the Sheet once everything is saved
+    } catch (e) {
+      if (e.net) { syncErr = 'Offline'; badge('⚠ Offline - will retry'); syncing = false; setTimeout(pump, 5000); return; }
+      if (/passcode/i.test(e.message)) { syncing = false; badge('⚠ Wrong passcode - changes not saved'); return; }
+      queue.shift(); saveQ(); alert('Could not save a change: ' + e.message);   // server refused this change
+      try { D = await call('load'); queue.forEach(it => applyLocal(it.action, it.payload)); route(); } catch (_) {}
+    }
+  }
+  syncing = false; badge('✓ Saved', 1500);
+}
+addEventListener('beforeunload', e => { if (queue.length) { e.preventDefault(); e.returnValue = ''; } });
+
+// Same rules as the Apps Script, applied to the in-browser copy. Safe to repeat.
+function applyLocal(action, p) {
+  const gift = id => D.gifts.find(x => x.id === id);
+  if (action === 'saveGift') {
+    const u = D.people.find(x => x.id === p.person.id);
+    if (u) Object.assign(u, p.person); else D.people.push({ ...p.person });
+    const g = gift(p.gift.id), row = { returned: false, returned_on: '', ret_type: '', ret_value: 0, ret_gold: 0, ret_description: '', ...p.gift };
+    if (g) Object.assign(g, row); else D.gifts.push(row);
+  } else if (action === 'returnGift') {
+    const g = gift(p.id); if (g) Object.assign(g, { returned: true, returned_on: p.returned_on, ret_type: p.ret_type || 'Cash', ret_value: +p.ret_value || 0, ret_gold: +p.ret_gold || 0, ret_description: p.ret_description || '' });
+  } else if (action === 'unreturnGift') {
+    const g = gift(p.id); if (g) Object.assign(g, { returned: false, returned_on: '', ret_type: '', ret_value: 0, ret_gold: 0, ret_description: '' });
+  } else if (action === 'deleteGift') D.gifts = D.gifts.filter(x => x.id !== p.id);
+  else if (action === 'savePerson') {
+    const u = D.people.find(x => x.id === p.id);
+    if (u) Object.assign(u, { name: p.name, phone: p.phone, address: p.address }); else D.people.push({ id: p.id, name: p.name, phone: p.phone, address: p.address });
+  } else if (action === 'deletePerson') D.people = D.people.filter(x => x.id !== p.id);
+  else if (action === 'addOccasion') { if (!D.occasions.some(o => o.toLowerCase() === p.name.toLowerCase())) D.occasions.push(p.name); }
+  else if (action === 'deleteOccasion') D.occasions = D.occasions.filter(o => o !== p.name);
+}
+
+// Change the page now, sync in the background.
+function change(action, payload, msg) {
+  applyLocal(action, payload);
+  queue.push({ action, payload }); saveQ();
+  flash = msg || ''; route(); pump();
+}
+
+// Decide whether a gift belongs to an existing person or a new one (same rules as before).
+function resolvePerson(v) {
+  const name = v.name.trim(), phone = (v.phone || '').trim(), address = (v.address || '').trim(), lc = name.toLowerCase();
+  let u = v.user_id ? D.people.find(x => x.id === v.user_id && x.name.toLowerCase() === lc) : null;
+  if (!u) {
+    const same = D.people.filter(x => x.name.toLowerCase() === lc);
+    if (phone) u = same.find(x => x.phone === phone) || same.find(x => !x.phone);
+    else if (same.length === 1) u = same[0];
+  }
+  return u ? { ...u, phone: phone || u.phone, address: address || u.address } : { id: uid(), name, phone, address };
 }
 
 // ---------------------------------------------------------------- helpers
@@ -165,15 +240,24 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   const v = Object.fromEntries(new FormData(f));
   if (kind === 'login') { key = v.key.trim(); localStorage.setItem('kk_key', key); start(); return; }
-  const btn = f.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
-  const done = () => { if (btn) btn.disabled = false; };
-  if (kind === 'gift') call('saveGift', { gift: v }).then(() => { flash = 'Gift saved.'; location.hash = '#/records'; }).catch(err => alert(err.message)).finally(done);
-  else if (kind === 'person') act(async () => { await call('savePerson', v); pDlg.close(); }, 'Saved.').finally(done);
-  else if (kind === 'ret') act(async () => { await call('returnGift', v); retDlg.close(); }, 'Return saved.').finally(done);
-  else if (kind === 'occ') act(() => call('addOccasion', v), 'Added occasion: ' + v.name).finally(done);
+  if (kind === 'gift') {
+    const person = resolvePerson(v);
+    const gift = { id: uid(), user_id: person.id, occasion: v.occasion, date: v.date || today(), direction: v.direction, gift_type: v.gift_type,
+      value: +v.value || 0, gold: +v.gold || 0, description: (v.description || '').trim() };
+    applyLocal('saveGift', { person, gift }); queue.push({ action: 'saveGift', payload: { person, gift } }); saveQ();
+    flash = 'Gift saved.'; location.hash = '#/records'; pump();
+  } else if (kind === 'person') {
+    if (!v.name.trim()) return;
+    pDlg.close(); change('savePerson', { id: v.id || uid(), name: v.name.trim(), phone: v.phone.trim(), address: v.address.trim() }, 'Saved.');
+  } else if (kind === 'ret') { retDlg.close(); change('returnGift', v, 'Return saved.'); }
+  else if (kind === 'occ') {
+    const n = v.name.trim();
+    if (D.occasions.some(o => o.toLowerCase() === n.toLowerCase())) return alert('That occasion already exists.');
+    change('addOccasion', { name: n }, 'Added occasion: ' + n);
+  }
   else if (kind === 'dsearch') location.hash = '#/records?q=' + encodeURIComponent(v.q);
   else if (kind === 'psearch') location.hash = '#/people?q=' + encodeURIComponent(v.q);
-  else if (kind === 'filters') { location.hash = '#/' + f.dataset.path + '?' + new URLSearchParams(Object.entries(v).filter(x => x[1])); done(); }
+  else if (kind === 'filters') location.hash = '#/' + f.dataset.path + '?' + new URLSearchParams(Object.entries(v).filter(x => x[1]));
 });
 
 document.addEventListener('change', e => {
@@ -206,10 +290,14 @@ document.addEventListener('click', e => {
       pid.value = u?.id || ''; pname2.value = u?.name || ''; pphone2.value = u?.phone || ''; paddr2.value = u?.address || '';
       pDlg.showModal(); break;
     }
-    case 'pdel': if (confirm(`Delete ${d.name}?`)) act(() => call('deletePerson', { id: d.id }), 'Person deleted.'); break;
-    case 'odel': act(() => call('deleteOccasion', { name: d.name }), 'Deleted occasion: ' + d.name); break;
-    case 'del': if (confirm(`Delete this gift from ${d.name}?`)) act(() => call('deleteGift', { id: d.id }), 'Gift deleted.'); break;
-    case 'unret': if (confirm(`Undo the return record for ${d.name}?`)) act(() => call('unreturnGift', { id: d.id }), 'Return undone.'); break;
+    case 'pdel':
+      if (D.gifts.some(x => x.user_id === d.id)) { alert("This person has gifts recorded, so they can't be deleted."); break; }
+      if (confirm(`Delete ${d.name}?`)) change('deletePerson', { id: d.id }, 'Person deleted.'); break;
+    case 'odel':
+      if (D.gifts.some(x => x.occasion === d.name)) { alert("Can't delete '" + d.name + "': gifts use it."); break; }
+      change('deleteOccasion', { name: d.name }, 'Deleted occasion: ' + d.name); break;
+    case 'del': if (confirm(`Delete this gift from ${d.name}?`)) change('deleteGift', { id: d.id }, 'Gift deleted.'); break;
+    case 'unret': if (confirm(`Undo the return record for ${d.name}?`)) change('unreturnGift', { id: d.id }, 'Return undone.'); break;
     case 'ret': {
       const v = +d.value, g = +d.gold, p = [];
       if (v) p.push(inr(v)); if (g) p.push(g + ' g gold');
@@ -227,7 +315,7 @@ async function start() {
     app.innerHTML = '<div class="empty">Open <b>config.js</b> and paste your Apps Script Web app URL (README step 3).</div>'; return;
   }
   if (!key) return loginScreen();
-  try { await call('load'); route(); }
+  try { D = await call('load'); queue.forEach(it => applyLocal(it.action, it.payload)); route(); pump(); }
   catch (e) {
     if (!key) return loginScreen('Wrong passcode. Please try again.');
     app.innerHTML = `<div class="empty">Could not load data: ${h(e.message)}<br><br><button onclick="location.reload()">Try again</button></div>`;
