@@ -151,7 +151,7 @@ function route() {
     returned: q => recordsPage('returned', 'Returned gifts', 'Gifts that have been returned, with what was given back.', q)
   };
   const p = pages[path] ? path : '';
-  $('#side').innerHTML = NAV.map(([k, l, i]) => `<a href="#/${k}" class="${k === p ? 'on' : ''}">${ic(i)}${l}</a>`).join('');
+  $('#side').innerHTML = NAV.map(([k, l, i]) => `<a href="#/${k}" class="${k === p ? 'on' : ''}">${ic(i)}${l}</a>`).join('') + '<a href="#/" data-act="logout">Log out</a>';
   $('#topnav').innerHTML = NAV.filter(n => TOP.includes(n[0])).sort((a, b) => TOP.indexOf(a[0]) - TOP.indexOf(b[0]))
     .map(([k, l, i]) => `<a href="#/${k}" class="${k === p ? 'on' : ''}">${ic(i)}${k === '' ? 'Home' : l}</a>`).join('');
   $('#app').innerHTML = pages[p](q);
@@ -164,6 +164,7 @@ document.addEventListener('submit', e => {
   const f = e.target, kind = f.dataset.form; if (!kind) return;
   e.preventDefault();
   const v = Object.fromEntries(new FormData(f));
+  if (kind === 'login') { key = v.key.trim(); localStorage.setItem('kk_key', key); start(); return; }
   const btn = f.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
   const done = () => { if (btn) btn.disabled = false; };
   if (kind === 'gift') call('saveGift', { gift: v }).then(() => { flash = 'Gift saved.'; location.hash = '#/records'; }).catch(err => alert(err.message)).finally(done);
@@ -197,6 +198,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const d = b.dataset;
   switch (d.act) {
+    case 'logout': e.preventDefault(); localStorage.removeItem('kk_key'); key = ''; location.hash = '#/'; location.reload(); break;
     case 'close': b.closest('dialog').close(); break;
     case 'padd': case 'pedit': {
       const u = d.act === 'pedit' ? D.people.find(x => x.id === d.id) : null;
@@ -224,10 +226,20 @@ async function start() {
   if (!window.CONFIG?.API_URL || window.CONFIG.API_URL.startsWith('PASTE')) {
     app.innerHTML = '<div class="empty">Open <b>config.js</b> and paste your Apps Script Web app URL (README step 3).</div>'; return;
   }
-  if (!key) { key = prompt('Enter your Kurikalyanam passcode:') || ''; localStorage.setItem('kk_key', key); }
+  if (!key) return loginScreen();
   try { await call('load'); route(); }
   catch (e) {
+    if (!key) return loginScreen('Wrong passcode. Please try again.');
     app.innerHTML = `<div class="empty">Could not load data: ${h(e.message)}<br><br><button onclick="location.reload()">Try again</button></div>`;
   }
+}
+function loginScreen(err) {
+  $('#side').innerHTML = ''; $('#topnav').innerHTML = '';
+  $('#app').innerHTML = `<section class="card" style="max-width:420px;margin:30px auto"><h2>Enter passcode</h2>
+    <p class="sub">Type the secret key you set in Apps Script (<code>SECRET</code>). It is remembered on this device.</p>
+    ${err ? `<div class="msg">${h(err)}</div>` : ''}
+    <form class="grid" data-form="login" style="grid-template-columns:1fr">
+      <label>Secret key<input name="key" type="password" autocomplete="current-password" required autofocus></label>
+      <div class="row"><button type="submit">Open</button></div></form></section>`;
 }
 start();
