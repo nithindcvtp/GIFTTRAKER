@@ -20,7 +20,7 @@ const NAV = [['', 'Dashboard', 'home'], ['gift', 'Add Gift', 'gift'], ['people',
 const TOP = ['', 'gift', 'people', 'occasions', 'records'];
 
 let D = { people: [], gifts: [], occasions: [] };
-let key = localStorage.getItem('kk_key') || '';
+let key = (window.CONFIG && window.CONFIG.PASSCODE) || localStorage.getItem('kk_key') || '';
 let flash = '';
 
 // ---------------------------------------------------------------- API
@@ -151,7 +151,7 @@ function route() {
     returned: q => recordsPage('returned', 'Returned gifts', 'Gifts that have been returned, with what was given back.', q)
   };
   const p = pages[path] ? path : '';
-  $('#side').innerHTML = NAV.map(([k, l, i]) => `<a href="#/${k}" class="${k === p ? 'on' : ''}">${ic(i)}${l}</a>`).join('') + '<a href="#/" data-act="logout">Log out</a>';
+  $('#side').innerHTML = NAV.map(([k, l, i]) => `<a href="#/${k}" class="${k === p ? 'on' : ''}">${ic(i)}${l}</a>`).join('') + (window.CONFIG.PASSCODE ? '' : '<a href="#/" data-act="logout">Log out</a>');
   $('#topnav').innerHTML = NAV.filter(n => TOP.includes(n[0])).sort((a, b) => TOP.indexOf(a[0]) - TOP.indexOf(b[0]))
     .map(([k, l, i]) => `<a href="#/${k}" class="${k === p ? 'on' : ''}">${ic(i)}${k === '' ? 'Home' : l}</a>`).join('');
   $('#app').innerHTML = pages[p](q);
