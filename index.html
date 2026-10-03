@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kurikalyanam</title>
+<link rel="stylesheet" href="style.css">
+</head><body>
+<header class="top">
+  <svg class="leaves" viewBox="0 0 320 90" aria-hidden="true">
+    <g fill="#7fae5f"><ellipse cx="205" cy="14" rx="30" ry="9" transform="rotate(-28 205 14)"/><ellipse cx="262" cy="30" rx="32" ry="9" transform="rotate(30 262 30)"/>
+      <ellipse cx="300" cy="8" rx="28" ry="8" transform="rotate(-40 300 8)"/><ellipse cx="238" cy="52" rx="24" ry="7" transform="rotate(60 238 52)"/></g>
+    <g fill="#f4cd4c"><circle cx="236" cy="22" r="10"/><circle cx="288" cy="52" r="8"/></g>
+    <g fill="#e8892b"><circle cx="236" cy="22" r="3.5"/><circle cx="288" cy="52" r="3"/></g>
+  </svg>
+  <div class="in">
+    <a class="logo" href="#/">
+      <svg width="54" height="54" viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="20" width="36" height="24" rx="3" fill="#e8892b"/>
+        <rect x="4" y="14" width="40" height="9" rx="2" fill="#f2a62b"/><rect x="21" y="14" width="6" height="30" fill="#1f6a3a"/>
+        <path d="M24 14c-8-9-15-3-9 0m9 0c8-9 15-3 9 0" fill="none" stroke="#1f6a3a" stroke-width="3" stroke-linecap="round"/></svg>
+      <span><b>Kurikalyanam</b><small>Gift &amp; Return Register</small></span>
+    </a>
+    <nav class="topnav" id="topnav"></nav>
+  </div>
+</header>
+<div class="shell">
+  <nav class="side" id="side"></nav>
+  <main><div id="flash"></div><div id="app"><div class="empty">Loading…</div></div></main>
+</div>
+
+<dialog id="pDlg">
+  <form class="grid" data-form="person" style="grid-template-columns:1fr">
+    <h2 id="pTitle">Add person</h2>
+    <input type="hidden" name="id" id="pid">
+    <label>Name *<input name="name" id="pname2" required></label>
+    <label>Phone<input name="phone" id="pphone2" type="tel"></label>
+    <label>Address<textarea name="address" id="paddr2" rows="2"></textarea></label>
+    <div class="row"><button type="submit">Save person</button><button type="button" class="plain" data-act="close">Cancel</button></div>
+  </form>
+</dialog>
+
+<dialog id="retDlg">
+  <form class="grid" data-form="ret" style="grid-template-columns:1fr 1fr">
+    <input type="hidden" name="id" id="retId">
+    <div class="wide"><h2>Mark returned</h2><div class="sub" id="retWho"></div><div class="sub" id="retOrig"></div></div>
+    <label>Return date<input name="returned_on" id="retDate" type="date"></label>
+    <label>Return gift type
+      <select name="ret_type" id="retType"><option>Cash</option><option>Gold</option><option>Other</option></select></label>
+    <label>Value (₹)<input name="ret_value" type="number" min="0" step="any"></label>
+    <label id="retGoldBox">Gold (grams)<input name="ret_gold" type="number" min="0" step="any"></label>
+    <label class="wide">What was the return gift?
+      <textarea name="ret_description" rows="2" placeholder="e.g. 1 pavan gold chain, mixer grinder, cash in envelope"></textarea></label>
+    <div class="wide row"><button type="submit">Save return</button><button type="button" class="plain" data-act="close">Cancel</button></div>
+  </form>
+</dialog>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body></html>
