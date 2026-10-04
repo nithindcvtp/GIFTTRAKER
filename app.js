@@ -152,7 +152,7 @@ function dashboard() {
     <div class="stat"><span class="ic o">${ic('clock')}</span><div><small>Pending</small><b>${pend.length}</b><em>${inr(sum(pend, e => e.value))} to return</em></div></div></div>
   <section class="card"><div class="head"><h2>Recent Records</h2>
     <form class="search" data-form="dsearch">${ic('search')}<input name="q" placeholder="Search name / phone / address..."></form>
-    <a class="btn" href="#/gift">${ic('plus')} Add New Gift</a></div>${recordsTable(recent, false)}</section>`;
+    <a class="btn" href="#/gift">${ic('plus')} Add New Gift</a></div>${recordsTable(recent, true)}</section>`;
 }
 
 function recordsPage(view, title, lead, q) {
