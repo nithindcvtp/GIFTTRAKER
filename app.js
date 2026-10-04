@@ -2,6 +2,7 @@
 const $ = s => document.querySelector(s);
 const h = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const inr = n => '₹' + Math.round(n || 0).toLocaleString('en-IN');
+const titleCase = t => t.replace(/\s+/g, ' ').trim().toLowerCase().replace(/(^|[\s\-.(])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
 const today = () => new Date().toISOString().slice(0, 10);
 const ICONS = {
   home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
@@ -78,8 +79,8 @@ function applyLocal(action, p) {
   if (action === 'saveGift') {
     const u = D.people.find(x => x.id === p.person.id);
     if (u) Object.assign(u, p.person); else D.people.push({ ...p.person });
-    const g = gift(p.gift.id), row = { returned: false, returned_on: '', ret_type: '', ret_value: 0, ret_gold: 0, ret_description: '', ...p.gift };
-    if (g) Object.assign(g, row); else D.gifts.push(row);
+    const g = gift(p.gift.id);
+    if (g) Object.assign(g, p.gift); else D.gifts.push({ returned: false, returned_on: '', ret_type: '', ret_value: 0, ret_gold: 0, ret_description: '', ...p.gift });
   } else if (action === 'returnGift') {
     const g = gift(p.id); if (g) Object.assign(g, { returned: true, returned_on: p.returned_on, ret_type: p.ret_type || 'Cash', ret_value: +p.ret_value || 0, ret_gold: +p.ret_gold || 0, ret_description: p.ret_description || '' });
   } else if (action === 'unreturnGift') {
@@ -102,7 +103,7 @@ function change(action, payload, msg) {
 
 // Decide whether a gift belongs to an existing person or a new one (same rules as before).
 function resolvePerson(v) {
-  const name = v.name.trim(), phone = (v.phone || '').trim(), address = (v.address || '').trim(), lc = name.toLowerCase();
+  const name = titleCase(v.name), phone = (v.phone || '').trim(), address = (v.address || '').trim(), lc = name.toLowerCase();
   let u = v.user_id ? D.people.find(x => x.id === v.user_id && x.name.toLowerCase() === lc) : null;
   if (!u) {
     const same = D.people.filter(x => x.name.toLowerCase() === lc);
@@ -132,8 +133,8 @@ function recordsTable(rows, actions) {
       <td>${r.returned ? h(giftLabel(r.ret_type, r.ret_gold, r.ret_description)) + (r.ret_type !== 'Other' && r.ret_description ? `<div class="sub">${h(r.ret_description)}</div>` : '') + `<div class="sub">on ${h(r.returned_on)}</div>` : '-'}</td>
       <td>${r.returned && r.ret_value ? inr(r.ret_value) : '-'}</td>
       <td>${r.returned ? '<span class="pill ok">Returned</span>' : '<span class="pill warn">Pending</span>'}</td>
-      ${actions ? `<td class="acts">${r.returned
-        ? `<button class="ghost small" data-act="unret" data-id="${r.id}" data-name="${h(u.name)}">Undo return</button>`
+      ${actions ? `<td class="acts"><button class="ghost small" data-act="gedit" data-id="${r.id}">Edit</button> ${r.returned
+        ? `<button class="ghost small" data-act="redit" data-id="${r.id}" data-name="${h(u.name)}">Edit return</button> <button class="ghost small" data-act="unret" data-id="${r.id}" data-name="${h(u.name)}">Undo return</button>`
         : `<button class="ghost small" data-act="ret" data-id="${r.id}" data-name="${h(u.name)}" data-value="${r.value}" data-gold="${r.gold}">Mark returned</button>`}
         <button class="del small" data-act="del" data-id="${r.id}" data-name="${h(u.name)}">Delete</button></td>` : ''}</tr>`;
     }).join('') + '</table></div>';
@@ -171,23 +172,26 @@ function recordsPage(view, title, lead, q) {
 }
 
 function giftForm(q) {
-  const pre = D.people.find(u => u.id === q.user);
-  return head('Add gift', 'Record a gift you received (or gave) at a wedding, birthday, housewarming or other occasion.') + `<section class="card">
+  const eg = D.gifts.find(x => x.id === q.edit), g = eg || {};
+  const pre = eg ? D.people.find(u => u.id === eg.user_id) : D.people.find(u => u.id === q.user);
+  const sel = (a, b) => (a === b ? 'selected' : '');
+  return head(eg ? 'Edit gift' : 'Add gift', eg ? 'Change anything and save. Return details are kept.' : 'Record a gift you received (or gave) at a wedding, birthday, housewarming or other occasion.') + `<section class="card">
   <form class="grid" data-form="gift">
+    <input type="hidden" name="id" value="${h(g.id)}">
     <input type="hidden" name="user_id" id="guid" value="${pre ? pre.id : ''}">
     <label>Name *<input name="name" id="gname" list="plist" autocomplete="off" required value="${h(pre?.name)}" placeholder="Type a name, or pick an existing person">
       <datalist id="plist">${sortedPeople().map(u => `<option value="${h(u.name)}">${h(u.phone)}</option>`).join('')}</datalist></label>
     <label>Phone<input name="phone" id="gphone" type="tel" value="${h(pre?.phone)}"></label>
     <label class="wide">Address<textarea name="address" id="gaddr" rows="2">${h(pre?.address)}</textarea></label>
     <p class="wide sub" id="gnote" style="margin:0">New names are saved to <a href="#/people">People</a> automatically.</p>
-    <label>Occasion *<select name="occasion" required>${[...D.occasions].sort().map(o => `<option>${h(o)}</option>`).join('')}</select></label>
-    <label>Date<input name="date" type="date" value="${today()}"></label>
-    <label>Who gave?<select name="direction"><option value="received">They gave us (we must return)</option><option value="given">We gave them (they must return)</option></select></label>
-    <label>Gift type<select name="gift_type" id="gtype"><option>Cash</option><option>Gold</option><option>Other</option></select></label>
-    <label>Value (₹)<input name="value" type="number" min="0" step="any" placeholder="Cash amount, or estimated worth"></label>
-    <label id="goldBox" style="display:none">Gold (grams) <span class="sub">1 pavan = 8 g</span><input name="gold" type="number" min="0" step="any"></label>
-    <label class="wide">Description (e.g. mixer grinder, 1 pavan chain)<textarea name="description" rows="2"></textarea></label>
-    <div class="wide row"><button type="submit">Save gift</button><a class="btn" style="background:none;color:var(--mute);border:1px solid var(--line)" href="#/">Cancel</a></div>
+    <label>Occasion *<select name="occasion" required>${[...D.occasions].sort().map(o => `<option ${sel(o, g.occasion)}>${h(o)}</option>`).join('')}</select></label>
+    <label>Date<input name="date" type="date" value="${h(g.date || today())}"></label>
+    <label>Who gave?<select name="direction"><option value="received" ${sel('received', g.direction)}>They gave us (we must return)</option><option value="given" ${sel('given', g.direction)}>We gave them (they must return)</option></select></label>
+    <label>Gift type<select name="gift_type" id="gtype">${['Cash', 'Gold', 'Other'].map(t => `<option ${sel(t, g.gift_type)}>${t}</option>`).join('')}</select></label>
+    <label>Value (₹)<input name="value" type="number" min="0" step="any" value="${g.value || ''}" placeholder="Cash amount, or estimated worth"></label>
+    <label id="goldBox" style="display:${g.gift_type === 'Gold' ? '' : 'none'}">Gold (grams) <span class="sub">1 pavan = 8 g</span><input name="gold" type="number" min="0" step="any" value="${g.gold || ''}"></label>
+    <label class="wide">Description (e.g. mixer grinder, 1 pavan chain)<textarea name="description" rows="2">${h(g.description)}</textarea></label>
+    <div class="wide row"><button type="submit">${eg ? 'Update gift' : 'Save gift'}</button><a class="btn" style="background:none;color:var(--mute);border:1px solid var(--line)" href="#/${eg ? 'records' : ''}">Cancel</a></div>
   </form></section>`;
 }
 
@@ -242,13 +246,13 @@ document.addEventListener('submit', e => {
   if (kind === 'login') { key = v.key.trim(); localStorage.setItem('kk_key', key); start(); return; }
   if (kind === 'gift') {
     const person = resolvePerson(v);
-    const gift = { id: uid(), user_id: person.id, occasion: v.occasion, date: v.date || today(), direction: v.direction, gift_type: v.gift_type,
+    const gift = { id: v.id || uid(), user_id: person.id, occasion: v.occasion, date: v.date || today(), direction: v.direction, gift_type: v.gift_type,
       value: +v.value || 0, gold: +v.gold || 0, description: (v.description || '').trim() };
     applyLocal('saveGift', { person, gift }); queue.push({ action: 'saveGift', payload: { person, gift } }); saveQ();
-    flash = 'Gift saved.'; location.hash = '#/records'; pump();
+    flash = v.id ? 'Gift updated.' : 'Gift saved.'; location.hash = '#/records'; pump();
   } else if (kind === 'person') {
     if (!v.name.trim()) return;
-    pDlg.close(); change('savePerson', { id: v.id || uid(), name: v.name.trim(), phone: v.phone.trim(), address: v.address.trim() }, 'Saved.');
+    pDlg.close(); change('savePerson', { id: v.id || uid(), name: titleCase(v.name), phone: v.phone.trim(), address: v.address.trim() }, 'Saved.');
   } else if (kind === 'ret') { retDlg.close(); change('returnGift', v, 'Return saved.'); }
   else if (kind === 'occ') {
     const n = v.name.trim();
@@ -278,10 +282,22 @@ document.addEventListener('input', e => {
   }
 });
 
+document.addEventListener('focusout', e => {
+  if (e.target.id === 'gname' || e.target.id === 'pname2') { e.target.value = titleCase(e.target.value); if (e.target.id === 'gname') e.target.dispatchEvent(new Event('input', { bubbles: true })); }
+});
+
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const d = b.dataset;
   switch (d.act) {
+    case 'gedit': location.hash = '#/gift?edit=' + d.id; break;
+    case 'redit': {
+      const g = D.gifts.find(x => x.id === d.id); if (!g) break;
+      const f = $('#retDlg form'); f.reset(); retId.value = g.id; retDate.value = g.returned_on || today();
+      retWho.textContent = 'Editing the return for ' + d.name; retOrig.textContent = '';
+      retType.value = g.ret_type || 'Cash'; f.elements.ret_value.value = g.ret_value || ''; f.elements.ret_gold.value = g.ret_gold || '';
+      f.elements.ret_description.value = g.ret_description || ''; retGoldBox.style.display = g.ret_type === 'Gold' ? '' : 'none'; retDlg.showModal(); break;
+    }
     case 'logout': e.preventDefault(); localStorage.removeItem('kk_key'); key = ''; location.hash = '#/'; location.reload(); break;
     case 'close': b.closest('dialog').close(); break;
     case 'padd': case 'pedit': {
