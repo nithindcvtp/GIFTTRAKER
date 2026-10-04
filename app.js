@@ -13,8 +13,13 @@ const ICONS = {
   clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
   undo: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
-  plus: '<path d="M5 12h14M12 5v14"/>'
+  plus: '<path d="M5 12h14M12 5v14"/>',
+  pencil: '<path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+  trash: '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/>'
 };
+document.head.appendChild(Object.assign(document.createElement('style'), { textContent:
+  '.ab{display:flex;gap:6px;align-items:center;flex-wrap:nowrap}.ib{width:34px;height:34px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--green);cursor:pointer;flex:none}' +
+  '.ib:hover{background:#f1f6ee}.ib.del{color:#b3261e}.ib.del:hover{background:#fdecea}.ib .i{width:18px;height:18px;margin:0}' }));
 const ic = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
 const NAV = [['', 'Dashboard', 'home'], ['gift', 'Add Gift', 'gift'], ['people', 'People', 'users'], ['records', 'All Records', 'list'],
   ['pending', 'Pending Returns', 'clock'], ['returned', 'Returned Gifts', 'undo'], ['occasions', 'Occasions', 'calendar']];
@@ -77,8 +82,9 @@ addEventListener('beforeunload', e => { if (queue.length) { e.preventDefault(); 
 function applyLocal(action, p) {
   const gift = id => D.gifts.find(x => x.id === id);
   if (action === 'saveGift') {
-    const u = D.people.find(x => x.id === p.person.id);
-    if (u) Object.assign(u, p.person); else D.people.push({ ...p.person });
+    const pp = { ...p.person, name: titleCase(p.person.name) };
+    const u = D.people.find(x => x.id === pp.id);
+    if (u) Object.assign(u, pp); else D.people.push(pp);
     const g = gift(p.gift.id);
     if (g) Object.assign(g, p.gift); else D.gifts.push({ returned: false, returned_on: '', ret_type: '', ret_value: 0, ret_gold: 0, ret_description: '', ...p.gift });
   } else if (action === 'returnGift') {
@@ -88,7 +94,7 @@ function applyLocal(action, p) {
   } else if (action === 'deleteGift') D.gifts = D.gifts.filter(x => x.id !== p.id);
   else if (action === 'savePerson') {
     const u = D.people.find(x => x.id === p.id);
-    if (u) Object.assign(u, { name: p.name, phone: p.phone, address: p.address }); else D.people.push({ id: p.id, name: p.name, phone: p.phone, address: p.address });
+    if (u) Object.assign(u, { name: titleCase(p.name), phone: p.phone, address: p.address }); else D.people.push({ id: p.id, name: titleCase(p.name), phone: p.phone, address: p.address });
   } else if (action === 'deletePerson') D.people = D.people.filter(x => x.id !== p.id);
   else if (action === 'addOccasion') { if (!D.occasions.some(o => o.toLowerCase() === p.name.toLowerCase())) D.occasions.push(p.name); }
   else if (action === 'deleteOccasion') D.occasions = D.occasions.filter(o => o !== p.name);
@@ -110,7 +116,7 @@ function resolvePerson(v) {
     if (phone) u = same.find(x => x.phone === phone) || same.find(x => !x.phone);
     else if (same.length === 1) u = same[0];
   }
-  return u ? { ...u, phone: phone || u.phone, address: address || u.address } : { id: uid(), name, phone, address };
+  return u ? { ...u, name, phone: phone || u.phone, address: address || u.address } : { id: uid(), name, phone, address };
 }
 
 // ---------------------------------------------------------------- helpers
@@ -133,10 +139,12 @@ function recordsTable(rows, actions) {
       <td>${r.returned ? h(giftLabel(r.ret_type, r.ret_gold, r.ret_description)) + (r.ret_type !== 'Other' && r.ret_description ? `<div class="sub">${h(r.ret_description)}</div>` : '') + `<div class="sub">on ${h(r.returned_on)}</div>` : '-'}</td>
       <td>${r.returned && r.ret_value ? inr(r.ret_value) : '-'}</td>
       <td>${r.returned ? '<span class="pill ok">Returned</span>' : '<span class="pill warn">Pending</span>'}</td>
-      ${actions ? `<td class="acts"><button class="ghost small" data-act="gedit" data-id="${r.id}">Edit</button> ${r.returned
-        ? `<button class="ghost small" data-act="redit" data-id="${r.id}" data-name="${h(u.name)}">Edit return</button> <button class="ghost small" data-act="unret" data-id="${r.id}" data-name="${h(u.name)}">Undo return</button>`
-        : `<button class="ghost small" data-act="ret" data-id="${r.id}" data-name="${h(u.name)}" data-value="${r.value}" data-gold="${r.gold}">Mark returned</button>`}
-        <button class="del small" data-act="del" data-id="${r.id}" data-name="${h(u.name)}">Delete</button></td>` : ''}</tr>`;
+      ${actions ? `<td class="acts"><div class="ab">
+        <button class="ib" title="Edit" aria-label="Edit" data-act="gedit" data-id="${r.id}">${ic('pencil')}</button>
+        ${r.returned
+          ? `<button class="ghost small" data-act="redit" data-id="${r.id}" data-name="${h(u.name)}">Edit return</button><button class="ib" title="Undo return" aria-label="Undo return" data-act="unret" data-id="${r.id}" data-name="${h(u.name)}">${ic('undo')}</button>`
+          : `<button class="ghost small" data-act="ret" data-id="${r.id}" data-name="${h(u.name)}" data-value="${r.value}" data-gold="${r.gold}">Mark returned</button>`}
+        <button class="ib del" title="Delete" aria-label="Delete" data-act="del" data-id="${r.id}" data-name="${h(u.name)}">${ic('trash')}</button></div></td>` : ''}</tr>`;
     }).join('') + '</table></div>';
 }
 
@@ -204,9 +212,10 @@ function peoplePage(q) {
   ${rows.length ? `<div class="tbl"><table style="min-width:640px"><tr><th>Name</th><th>Phone</th><th>Address</th><th>Gifts</th><th>Pending</th><th></th></tr>` +
     rows.map(u => { const es = D.gifts.filter(e => e.user_id === u.id);
       return `<tr><td><b>${h(u.name)}</b></td><td>${h(u.phone)}</td><td>${h(u.address)}</td><td><a href="#/records?user=${u.id}">${es.length}</a></td><td>${es.filter(toReturn).length}</td>
-      <td class="acts"><a class="btn ghost small" style="background:none;color:var(--green);border:1px solid var(--green)" href="#/gift?user=${u.id}">Add gift</a>
-      <button class="ghost small" data-act="pedit" data-id="${u.id}">Edit</button>
-      <button class="del small" data-act="pdel" data-id="${u.id}" data-name="${h(u.name)}">Delete</button></td></tr>`; }).join('') + '</table></div>'
+      <td class="acts"><div class="ab">
+      <a class="ib" title="Add gift" aria-label="Add gift" href="#/gift?user=${u.id}">${ic('gift')}</a>
+      <button class="ib" title="Edit" aria-label="Edit" data-act="pedit" data-id="${u.id}">${ic('pencil')}</button>
+      <button class="ib del" title="Delete" aria-label="Delete" data-act="pdel" data-id="${u.id}" data-name="${h(u.name)}">${ic('trash')}</button></div></td></tr>`; }).join('') + '</table></div>'
     : '<div class="empty">No people yet. They appear here automatically when you add a gift.</div>'}</section>`;
 }
 
@@ -331,7 +340,12 @@ async function start() {
     app.innerHTML = '<div class="empty">Open <b>config.js</b> and paste your Apps Script Web app URL (README step 3).</div>'; return;
   }
   if (!key) return loginScreen();
-  try { D = await call('load'); queue.forEach(it => applyLocal(it.action, it.payload)); route(); pump(); }
+  try { D = await call('load'); queue.forEach(it => applyLocal(it.action, it.payload));
+    D.people.filter(u => titleCase(u.name) !== u.name).forEach(u => {
+      const p = { id: u.id, name: titleCase(u.name), phone: u.phone, address: u.address };
+      applyLocal('savePerson', p); queue.push({ action: 'savePerson', payload: p }); saveQ();
+    });
+    route(); pump(); }
   catch (e) {
     if (!key) return loginScreen('Wrong passcode. Please try again.');
     app.innerHTML = `<div class="empty">Could not load data: ${h(e.message)}<br><br><button onclick="location.reload()">Try again</button></div>`;
